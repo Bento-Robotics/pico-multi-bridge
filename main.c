@@ -4,6 +4,7 @@
 #include "pico/util/queue.h"
 #include "tusb.h"
 #include <assert.h>
+#include "can2040.h"
 
 #if defined(BOARD_PICO_MCP2515_MODULE_20MHZ) ||                                \
     defined(BOARD_PICO_MCP2515_MODULE_8MHZ)
