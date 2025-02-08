@@ -23,11 +23,9 @@ function(add_board BOARD)
     usb_descriptors.c
   )
   target_include_directories(gs_usb_${BOARD} PRIVATE .)
-  target_link_libraries(gs_usb_${BOARD} pico_stdlib hardware_spi tinyusb_device tinyusb_board can2040)
+  target_link_libraries(gs_usb_${BOARD} pico_stdlib tinyusb_device tinyusb_board can2040)
   target_compile_definitions(gs_usb_${BOARD} PRIVATE -DBOARD_${BOARD})
   pico_add_extra_outputs(gs_usb_${BOARD})
 endfunction()
 
-add_board(PICO_MCP2515_MODULE_8MHZ)
-add_board(PICO_MCP2515_MODULE_20MHZ)
-add_board(ADAFRUIT_CAN_FEATHER)
+add_board(PICO_CAN2040)
