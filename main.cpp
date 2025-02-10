@@ -3,6 +3,7 @@
 #include "pico/util/queue.h"
 #include "tusb.h"
 #include <assert.h>
+#include <pico/time.h>
 #include "hardware/clocks.h"
 
 #include "RP2040.h"
@@ -83,9 +84,37 @@ ssize_t mcp2515_get_free_tx() {
 
   return -1;
 }
+// echo to either Serial0 or Serial1
+// with Serial0 as all lower case, Serial1 as all upper case
+static void echo_serial_port(uint8_t itf, uint8_t buf[], uint32_t count)
+{
+  for(uint32_t i=0; i<count; i++)
+  {
+    if (itf == 0)
+    {
+      // echo back 1st port as lower case
+      //if (isupper(buf[i])) buf[i] += 'a' - 'A';
+    }
+    else
+    {
+      // echo back additional ports as upper case
+      //if (islower(buf[i])) buf[i] -= 'a' - 'A';
+    }
 
+    tud_cdc_n_write_char(itf, buf[i]);
+
+    if ( buf[i] == '\r' || buf[i] == '\n' ) {
+      tud_cdc_n_write_char(itf, '\n');
+      tud_cdc_n_write_char(itf, itf + 30); //numbers begin @ 30 in unicode
+      tud_cdc_n_write_char(itf, '>');
+    }
+  }
+  tud_cdc_n_write_flush(itf);
+}
 
 int main() {
+  sleep_ms(500); //TODO wait for USB to be online
+
   tusb_init();
 
   for (size_t i = 0; i < sizeof(tx) / sizeof(*tx); i++) {
@@ -138,6 +167,19 @@ int main() {
         tx.dlc = frame->can_dlc;
         memcpy(tx.data, frame->data, frame->can_dlc);
         can2040_transmit(&cbus, &tx);
+      }
+    }
+
+    // aka cdc_task();
+    for (uint8_t itf = 0; itf < CFG_TUD_CDC; itf++)  {
+    if ( tud_cdc_n_connected(itf) && tud_cdc_n_available(itf) )      {
+        uint8_t buf[64];
+
+        uint32_t count = tud_cdc_n_read(itf, buf, sizeof(buf));
+
+        // echo back to both serial ports
+        echo_serial_port(0, buf, count);
+        echo_serial_port(1, buf, count);
       }
     }
   }
