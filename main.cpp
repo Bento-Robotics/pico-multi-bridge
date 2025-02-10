@@ -6,7 +6,9 @@
 #include "hardware/clocks.h"
 
 #include "RP2040.h"
+extern "C" {
 #include "can2040.h"
+}
 // #if defined(PICO_CAN2040)
 // #include "can2040.h"
 // #else
@@ -62,8 +64,8 @@ can2040_cb(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg) {
       memcpy(rxf.data, msg->data, rxf.can_dlc);
       queue_try_add(&rx_frames, &rxf);
       break;
-    case CAN2040_NOTIFY_ERROR: //TODO
-      break;
+    // case CAN2040_NOTIFY_ERROR: //TODO
+    //   break;
   }
 }
 
@@ -162,7 +164,7 @@ bool usb_handle_control_out(uint8_t req) {
   return false;
 }
 
-bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage,
+extern "C" bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage,
                                 const tusb_control_request_t *request) {
   if (request->bmRequestType_bit.type != TUSB_REQ_TYPE_VENDOR ||
     request->wIndex != 0) {

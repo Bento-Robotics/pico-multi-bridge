@@ -19,7 +19,7 @@ pico_generate_pio_header(can2040 ${CMAKE_CURRENT_LIST_DIR}/can2040/pio/can2040.p
 
 function(add_board BOARD)
   add_executable(gs_usb_${BOARD}
-    main.c
+    main.cpp
     usb_descriptors.c
   )
   target_include_directories(gs_usb_${BOARD} PRIVATE .)
