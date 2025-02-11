@@ -53,6 +53,13 @@
 
       You can then interact with sensor using following commands:
       i2cget i2cset i2cdump i2ctransfer or using any driver/tools that work on i2c device.
+
+ * - Status and activity LEDs - 2 colors (RX/TX)
+      only use one Pin per UART:                    o ← GPIO {0V, 3.3V, Hi-Z}        0V  3.3V Hi-Z
+                                    3.3V──100Ω──⯈⊢₁─┴─⯈⊢₂──100Ω──0V             LED1 ON  OFF  OFF
+      Hi-Z is acheived by setting pinMode(x, INPUT);                            LED2 OFF ON   OFF
+       switch beween 0V and 3.3V when data is recveived/transmitted
+       switch to Hi-Z after ~10ms of inactivity => looks like it blinks when data is flowing
  */
 
 // make sure enough USB CDCs are enabled
@@ -60,9 +67,18 @@
 #error "CFG_TUD_CDC must be at least 2, change in platformio.ini"
 #endif
 
+// Utility macros for periodically doing stuff in a non-blocking loop.
+// From: https://gist.github.com/EleotleCram/0893191b09043aa91585a1850c52c6d6
+#define MILLISECONDS * 1
+#define SECONDS * 1000 MILLISECONDS
+#define EVERY(N) for (static uint32_t _lasttime;                   \
+  (uint32_t)((uint32_t)millis() - _lasttime) >= (N); _lasttime += (N))
+
+
 static uint8_t i2c_buf[800];
 
 #define MyWire    Wire
+#define PIN_LED_ACT 16
 
 Adafruit_USBD_I2C i2c_usb(&MyWire);
 Adafruit_USBD_CDC USBSer1; // Builtin USB serial active by default
@@ -82,6 +98,7 @@ void setup() {
 
   // initialize auxiliary CDC and Serial interfaces
   USBSer1.begin(115200);
+  pinMode(PIN_LED_ACT, INPUT); // Hi-Z
 
   // init i2c usb with buffer and size
   i2c_usb.begin(i2c_buf, sizeof(i2c_buf));
@@ -102,20 +119,35 @@ void setup() {
 
 }
 
+static const pin_size_t NOPIN = 0xff; // Use in constructor to disable LED output
+
 void loop() {
 
   // Passthrough data between SerialA and SerialB
-  auto serial_passthrough = [](Stream &SerialA, Stream &SerialB) -> void {
+  auto serial_passthrough = [](Stream &SerialA, Stream &SerialB, pin_size_t activity_leds_pin = NOPIN) -> void {
     if (SerialA.available()) {
       SerialB.write(SerialA.read());
+      if (activity_leds_pin != NOPIN) {
+      pinMode(activity_leds_pin, OUTPUT);
+      digitalWrite(activity_leds_pin, HIGH);
+    }
     }
     if (SerialB.available()) {
       SerialA.write(SerialB.read());
+      if (activity_leds_pin != NOPIN) {
+      pinMode(activity_leds_pin, OUTPUT);
+      digitalWrite(activity_leds_pin, LOW);
+    }
     }
   };
 
-  serial_passthrough(Serial, USBSer1);
 
+  serial_passthrough(Serial, USBSer1, PIN_LED_ACT);
+
+  // extends led on duration long enough for all data rates to be visible to humans
+  EVERY(10 MILLISECONDS) {
+    pinMode(PIN_LED_ACT, INPUT);
+  }
 }
 
 

@@ -1,6 +1,11 @@
 # TODO:
 - README content
 - CI / auto-build
+- monitor for buffer overflows `Serial::overflow()` (this also clears the buffer overflow flag)
+- (use interrupts for data transfer)
+- error detection → reset interface (detach, attach) - micro ros agent sometimes needs a reconnection of the serial port to re-initialize
+         if (TinyUSBDevice.mounted()) { TinyUSBDevice.detach(); delay(10); TinyUSBDevice.attach(); }
+
 
 # Sources
 - How (Tiny)USB works: [pschatzmann.ch:tinyusb-a-simple-tutorial](https://www.pschatzmann.ch/home/2021/02/19/tinyusb-a-simple-tutorial/), [beyondlogic.org:usbnutshell](https://www.beyondlogic.org/usbnutshell/usb5.shtml)
