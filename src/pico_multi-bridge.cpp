@@ -82,6 +82,9 @@ static uint8_t i2c_buf[800];
 
 Adafruit_USBD_I2C i2c_usb(&MyWire);
 Adafruit_USBD_CDC USBSer1; // Builtin USB serial active by default
+// Adafruit_USBD_CDC USBSer2;
+Adafruit_USBD_CDC USBSer3;
+SerialPIO Serial3(2,3);
 
 void setup() {
 
@@ -99,6 +102,13 @@ void setup() {
   // initialize auxiliary CDC and Serial interfaces
   USBSer1.begin(115200);
   pinMode(PIN_LED_ACT, INPUT); // Hi-Z
+  Serial1.setTX(0);
+  Serial1.setRX(1);
+  Serial1.begin(115200);
+
+  USBSer3.begin(115200);
+  //pinMode(PIN_LED_ACT, INPUT); // Hi-Z
+  Serial3.begin(115200);
 
   // init i2c usb with buffer and size
   i2c_usb.begin(i2c_buf, sizeof(i2c_buf));
@@ -110,12 +120,14 @@ void setup() {
     TinyUSBDevice.attach();
   }
 
-  // wait for all ports to come online
-  while (!Serial || !USBSer1) {
-    if (!Serial)  USBSer1.println("Waiting for Serial");
-    if (!USBSer1) Serial.println("Waiting for USBSer1");
-    delay(1000);
-  }
+  //NOTE: only use this if you want to make sure all interfaces are in use
+  // // wait for all auxiliary ports to come online
+  // while (!USBSer1 || !USBSer3) {
+  //   // local hardware ports seem to immediately initialize, so leave them out
+  //   if (!USBSer1) Serial.println("Waiting for USBSer1");
+  //   if (!USBSer3) Serial.println("Waiting for USBSer3");
+  //   delay(1000);
+  // }
 
 }
 
@@ -142,11 +154,16 @@ void loop() {
   };
 
 
-  serial_passthrough(Serial, USBSer1, PIN_LED_ACT);
+  serial_passthrough(USBSer1, Serial1, PIN_LED_ACT);
+  serial_passthrough(USBSer3, Serial3, PIN_LED_ACT);
 
   // extends led on duration long enough for all data rates to be visible to humans
   EVERY(10 MILLISECONDS) {
     pinMode(PIN_LED_ACT, INPUT);
+  }
+
+  EVERY(1 SECONDS) {
+   digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
   }
 }
 
