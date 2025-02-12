@@ -3,6 +3,9 @@
 #include "pico/util/queue.h"
 #include "tusb.h"
 #include <assert.h>
+#include <cstdint>
+#include <hardware/gpio.h>
+#include <hardware/uart.h>
 #include <pico/time.h>
 #include "hardware/clocks.h"
 
@@ -84,35 +87,35 @@ ssize_t mcp2515_get_free_tx() {
 
   return -1;
 }
-// echo to either Serial0 or Serial1
-// with Serial0 as all lower case, Serial1 as all upper case
-static void echo_serial_port(uint8_t itf, uint8_t buf[], uint32_t count)
-{
-  for(uint32_t i=0; i<count; i++)
-  {
-    if (itf == 0)
-    {
-      // echo back 1st port as lower case
-      //if (isupper(buf[i])) buf[i] += 'a' - 'A';
-    }
-    else
-    {
-      // echo back additional ports as upper case
-      //if (islower(buf[i])) buf[i] -= 'a' - 'A';
-    }
 
-    tud_cdc_n_write_char(itf, buf[i]);
-
-    if ( buf[i] == '\r' || buf[i] == '\n' ) {
-      tud_cdc_n_write_char(itf, '\n');
-      tud_cdc_n_write_char(itf, itf + 30); //numbers begin @ 30 in unicode
-      tud_cdc_n_write_char(itf, '>');
-    }
+static void forward_serial(uart_inst_t *uart, uint8_t itf) {
+  while(uart_is_readable(uart)) {
+    char c = uart_getc(uart);
+   // uart_putc_raw(uart0, c);
+    tud_cdc_n_write_char(itf, c);
   }
   tud_cdc_n_write_flush(itf);
 }
 
 int main() {
+  uint32_t sys_clock = 125000000, can_bitrate = 500000;
+  set_sys_clock_hz(sys_clock, true);
+
+  uint32_t gpio_uart0_tx = 12, gpio_uart0_rx = 13, gpio_uart1_tx = 8, gpio_uart1_rx = 9;
+
+  // Set the GPIO pin mux to the UART - pin 0 is TX, 1 is RX; note use of UART_FUNCSEL_NUM for the general
+  // case where the func sel used for UART depends on the pin number
+  // Do this before calling uart_init to avoid losing data
+  gpio_set_function(gpio_uart0_rx, UART_FUNCSEL_NUM(uart0, gpio_uart0_rx));
+  gpio_set_function(gpio_uart0_tx, UART_FUNCSEL_NUM(uart0, gpio_uart0_tx));
+  gpio_set_function(gpio_uart1_rx, UART_FUNCSEL_NUM(uart1, gpio_uart1_rx));
+  gpio_set_function(gpio_uart1_tx, UART_FUNCSEL_NUM(uart1, gpio_uart1_tx));
+
+  // Initialise UARTs
+  //uart_init(uart0, 128000); // lidar
+  uart_init(uart0, 115200);
+  uart_init(uart1, 115200);
+
   sleep_ms(500); //TODO wait for USB to be online
 
   tusb_init();
@@ -124,9 +127,7 @@ int main() {
   queue_init(&rx_frames, sizeof(struct gs_host_frame), RX_FRAMES_QUEUE_LEN);
 
   uint32_t pio_num = 0;
-  uint32_t sys_clock = 125000000, bitrate = 500000;
-  set_sys_clock_hz(sys_clock, true);
-  uint32_t gpio_rx = 18, gpio_tx = 19;
+  uint32_t gpio_rx = 3, gpio_tx = 4;
 
   // Setup canbus
   can2040_setup(&cbus, pio_num);
@@ -138,7 +139,7 @@ int main() {
   NVIC_EnableIRQ(PIO0_IRQ_0_IRQn);
 
   // Start canbus
-  can2040_start(&cbus, sys_clock, bitrate, gpio_rx, gpio_tx);
+  can2040_start(&cbus, sys_clock, can_bitrate, gpio_rx, gpio_tx);
   sleep_ms(250);
 
 
@@ -176,12 +177,11 @@ int main() {
         uint8_t buf[64];
 
         uint32_t count = tud_cdc_n_read(itf, buf, sizeof(buf));
-
-        // echo back to both serial ports
-        echo_serial_port(0, buf, count);
-        echo_serial_port(1, buf, count);
+        uart_write_blocking(itf == 0 ? uart0 : uart1, buf, count);
       }
     }
+    forward_serial(uart0, 0);
+    forward_serial(uart1, 1);
   }
 }
 
