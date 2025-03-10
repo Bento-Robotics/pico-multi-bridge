@@ -22,8 +22,8 @@
  * THE SOFTWARE.
  */
 
-#ifndef ADAFRUIT_USBD_CAN_H_
-#define ADAFRUIT_USBD_CAN_H_
+#ifndef BENTO_USBD_CAN_H_
+#define BENTO_USBD_CAN_H_
 
 #include "Adafruit_TinyUSB.h"
 #include "pico/util/queue.h"
@@ -32,9 +32,9 @@ extern "C" {
 #include "can2040.h"
 }
 
-class Adafruit_USBD_CAN: public Adafruit_USBD_Interface {
+class Bento_USBD_CAN: public Adafruit_USBD_Interface {
 public:
-  Adafruit_USBD_CAN(can2040* cbus);
+  Bento_USBD_CAN(can2040* cbus);
   bool begin(pin_size_t gpio_rx, pin_size_t gpio_tx, uint32_t bitrate = 500000, size_t rx_bufsize = 4);
 
   bool handleControlTransfer(uint8_t rhport, uint8_t stage, tusb_control_request_t const* request);

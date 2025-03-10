@@ -12,7 +12,7 @@
 
 #include "Adafruit_TinyUSB.h"
 #include "Adafruit_USBD_CDC.h"
-#include "Adafruit_USBD_CAN.h"
+#include "Bento_USBD_CAN.h"
 #include "Adafruit_USBD_Device.h"
 #include "class/vendor/vendor_device.h"
 #include "gs_usb.h"
@@ -72,7 +72,7 @@ static can2040 cbus;
 
 #define PIN_LED_ACT 16
 
-Adafruit_USBD_CAN can_usb(&cbus);
+Bento_USBD_CAN can_usb(&cbus);
 Adafruit_USBD_CDC USBSer1; // Builtin USB serial active by default
 // Adafruit_USBD_CDC USBSer2;
 Adafruit_USBD_CDC USBSer3;

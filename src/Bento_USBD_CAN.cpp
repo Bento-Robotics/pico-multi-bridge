@@ -53,16 +53,16 @@
      switch to Hi-Z after ~10ms of inactivity => looks like it blinks when data is flowing
  */
 
-#include "Adafruit_USBD_CAN.h"
+#include "Bento_USBD_CAN.h"
 #include "gs_usb.h"
 
-Adafruit_USBD_CAN::Adafruit_USBD_CAN(can2040* cbus) {
+Bento_USBD_CAN::Bento_USBD_CAN(can2040* cbus) {
   _cbus = cbus;
   //rx_buf = NULL;
   setStringDescriptor("CAN Interface");
 }
 
-uint16_t Adafruit_USBD_CAN::getInterfaceDescriptor(uint8_t itfnum_deprecated, uint8_t* buf, uint16_t bufsize) {
+uint16_t Bento_USBD_CAN::getInterfaceDescriptor(uint8_t itfnum_deprecated, uint8_t* buf, uint16_t bufsize) {
   uint8_t itfnum = 0;
   uint8_t ep_in = 0;
   uint8_t ep_out = 0;
@@ -88,7 +88,7 @@ uint16_t Adafruit_USBD_CAN::getInterfaceDescriptor(uint8_t itfnum_deprecated, ui
   return len;
 }
 
-bool Adafruit_USBD_CAN::begin(pin_size_t gpio_rx, pin_size_t gpio_tx, uint32_t bitrate, size_t rx_bufsize) {
+bool Bento_USBD_CAN::begin(pin_size_t gpio_rx, pin_size_t gpio_tx, uint32_t bitrate, size_t rx_bufsize) {
   queue_init(&rx_buf, sizeof(gs_host_frame), rx_bufsize);
 
   if (!_cbus || !rx_bufsize) return false;
@@ -101,7 +101,7 @@ bool Adafruit_USBD_CAN::begin(pin_size_t gpio_rx, pin_size_t gpio_tx, uint32_t b
   return true;
 }
 
-void Adafruit_USBD_CAN::handle_can2040_message(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg){
+void Bento_USBD_CAN::handle_can2040_message(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg){
   switch (notify) {
     case CAN2040_NOTIFY_RX:
     case CAN2040_NOTIFY_TX: // echo messages
@@ -120,9 +120,9 @@ void Adafruit_USBD_CAN::handle_can2040_message(struct can2040 *cd, uint32_t noti
     //   break;
   }
 }
-//uint16_t Adafruit_USBD_I2C::i2c_read(uint8_t addr, uint8_t* buf, uint16_t len, bool stop_bit)
+//uint16_t Bento_USBD_I2C::i2c_read(uint8_t addr, uint8_t* buf, uint16_t len, bool stop_bit)
 
-//uint16_t Adafruit_USBD_I2C::i2c_write(uint8_t addr, uint8_t const* buf, uint16_t len, bool stop_bit){}
+//uint16_t Bento_USBD_I2C::i2c_write(uint8_t addr, uint8_t const* buf, uint16_t len, bool stop_bit){}
 
 uint32_t byte_order = 0;
 
@@ -133,7 +133,7 @@ struct usb_control_out_t {
 };
 
 // extern "C" {
-// bool Adafruit_USBD_CAN::usb_handle_control_out(uint8_t req) {
+// bool Bento_USBD_CAN::usb_handle_control_out(uint8_t req) {
 //   if (req == GS_USB_BREQ_HOST_FORMAT) {
 //     return byte_order == 0xbeef;
 //   } else if (req == GS_USB_BREQ_MODE) {
@@ -162,7 +162,7 @@ struct usb_control_out_t {
     {GS_USB_BREQ_MODE, &device_mode, sizeof(device_mode)},
   };
 
-bool Adafruit_USBD_CAN::handleControlTransfer(uint8_t rhport, uint8_t stage, tusb_control_request_t const* request) {
+bool Bento_USBD_CAN::handleControlTransfer(uint8_t rhport, uint8_t stage, tusb_control_request_t const* request) {
 
   if (request->bmRequestType_bit.type != TUSB_REQ_TYPE_VENDOR || request->wIndex != 0) {
     return false;
