@@ -13,5 +13,6 @@
 - Configuring TinyUSB: comparing the `tusb_config.h` and `usb_descriptors.c` of a multitude of projects, especially the Adafruit one
 - Multiple TinyUSB CDC interfaces: [Adafruit_TinyUSB_Arduino:cdc_multi.ino](https://github.com/adafruit/Adafruit_TinyUSB_Arduino/blob/master/examples/CDC/cdc_multi/cdc_multi.ino)
 - Using 7 serial I/Os on the rp2040: [Stylesoftware/rpi-pico-2040-how-to-use-all-serial-ports](https://github.com/Stylesoftware/rpi-pico-2040-how-to-use-all-serial-ports)
+- Quickly queueing UART data qith interrupts to not overflow buffers: [pico-examples:uart_rx/uart_rx_intr.c](https://github.com/raspberrypi/pico-examples/blob/master/pio/uart_rx/uart_rx_intr.c)
 - Using the rp2040 as CAN↔USB bridge: [trnila/rp2040-can-mcp2515](https://github.com/trnila/rp2040-can-mcp2515)
 <!-- - TODO  I forgot something -->
