@@ -14,7 +14,9 @@
 #include "Adafruit_USBD_CDC.h"
 #include "Bento_USBD_CAN.h"
 #include "Adafruit_USBD_Device.h"
+#include "RP2040Support.h"
 #include "class/vendor/vendor_device.h"
+#include "Adafruit_NeoPixel.h"
 #include "gs_usb.h"
 #include "pico/util/queue.h"
 extern "C" {
@@ -69,15 +71,44 @@ extern "C" {
 
 
 static can2040 cbus;
-
-#define PIN_LED_ACT 16
+#define PIN_LED_STRIP  2
+#define PIN_LED_ACT   16
 
 Bento_USBD_CAN can_usb(&cbus);
 Adafruit_USBD_CDC USBSer1; // Builtin USB serial active by default
 // Adafruit_USBD_CDC USBSer2;
 Adafruit_USBD_CDC USBSer3;
 SerialPIO Serial3(8,9);
+Adafruit_NeoPixel strip(25, PIN_LED_STRIP, NEO_GRB + NEO_KHZ800);
 
+// Input a value 0 to 255 to get a color value.
+// The colours are a transition r - g - b - back to r.
+uint32_t wheel(byte WheelPos) {
+  WheelPos = 255 - WheelPos;
+  if(WheelPos < 85) {
+    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+  }
+  if(WheelPos < 170) {
+    WheelPos -= 85;
+    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
+  WheelPos -= 170;
+  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+}
+
+
+// Rainbow cycle along whole strip. Pass delay time (in ms) between frames.
+void rainbow() {
+  static uint pixelCycle = 0;
+
+  for(uint i=0; i < strip.numPixels(); i++) {
+    strip.setPixelColor(i, wheel((3*i + pixelCycle) & 255)); //  Update delay time  
+  }
+  strip.show();                             //  Update strip to match
+  pixelCycle++;                             //  Advance current cycle
+  if(pixelCycle >= 256)
+    pixelCycle = 0;                         //  Loop the cycle back to the begining
+}
 
 static void
 can2040_cb(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg)
@@ -102,6 +133,7 @@ void setup() {
   }
   digitalWrite(LED_BUILTIN, LOW);
 
+  strip.setBrightness(40);
 
   /*NOTE for reasons beyond me, the can-usb interface
    * needs to be started *before* all usb CDCs.
@@ -228,6 +260,13 @@ void loop() {
   }
 
   tud_task(); // seemingly has no effect?
+
+}
+
+void loop1() {
+  EVERY(10 MILLISECONDS) {
+    rainbow();
+  }
 }
 
 //extern "C" {
