@@ -10,61 +10,54 @@
  any redistribution
 *********************************************************************/
 
-#include <Wire.h>
 #include "Adafruit_TinyUSB.h"
-
 #include "Adafruit_USBD_CDC.h"
-#include "Adafruit_USBD_I2C.h"
+#include "Adafruit_USBD_CAN.h"
+#include "Adafruit_USBD_Device.h"
+#include "class/vendor/vendor_device.h"
+#include "gs_usb.h"
+#include "pico/util/queue.h"
+extern "C" {
+#include "can2040.h"
+}
+#include "RP2040.h" //TODO I hate this, cmake just does `-lcmsis_core ;hardware_irq` or something
 
-/* This sketch demonstrates tinyusb multiple CDC interfaces and
- * a vendor interface to implement i2c-tiny-usb adapter to use with Linux
- *
+/* This sketch implements multiple CDC interfaces and
+ * a gs_usb CAN adapter using can2040 and Adafruit_TinyUSB
+
  * Reference:
- * - https://github.com/torvalds/linux/blob/master/drivers/i2c/busses/i2c-tiny-usb.c
- * - https://github.com/harbaum/I2C-Tiny-USB
- *
+   - https://github.com/torvalds/linux/blob/master/drivers/net/can/usb/gs_usb.c
+   - https://github.com/trnila/rp2040-can-mcp2515
+
  * Requirement:
- * - Install i2c-tools with
- *    sudo apt install i2c-tools
- * - The max number of CDC ports (CFG_TUD_CDC) has to be changed to at least 2.
- *    add the build_flag "-DCFG_TUD_CDC=2" in platformio.ini
- *
+     The max number of CDC ports (CFG_TUD_CDC) has to be changed to at least 3.
+      add the build_flag "-DCFG_TUD_CDC=3" in platformio.ini
+
  * How to test sketch:
- * - Compile and flash this sketch on your board with an i2c device, it should enumerated as
- *    ID 1c40:0534 EZPrototypes i2c-tiny-usb interface
- *
- * - Run "minicom --device /dev/ttyACM0" and "minicom --device /dev/ttyACM1"
- *    These ports are sent to each other - anything sent from 0 will show up in 1 and vice versa.
- *    Try typing some stuff!
- *
- * - Run "i2cdetect -l" to find our bus ID e.g
- *    i2c-8	i2c       	i2c-tiny-usb at bus 003 device 039	I2C adapter
- *
- * - Run "i2cdetect -y 8" to scan for on-board device (8 is the above bus ID)
- *         0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
-      00:                         -- -- -- -- -- -- -- --
-      10: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
-      20: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
-      30: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
-      40: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
-      50: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
-      60: -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
-      70: -- -- -- -- -- -- -- 77
+    Compile and flash this sketch on your rp2040 and wire up a can transceiver, it should enumerated as
+    ID 1209:2323 Generic bytewerk.org candleLight
 
-      You can then interact with sensor using following commands:
-      i2cget i2cset i2cdump i2ctransfer or using any driver/tools that work on i2c device.
+ * Run "minicom --device /dev/ttyACM1" and/or "minicom --device /dev/ttyACM2"
+    Now connect a jumper between the serial RX and TX pins.
+    Whatever you type will show up in the RX you wired it into.
+    Try typing some stuff!
 
- * - Status and activity LEDs - 2 colors (RX/TX)
-      only use one Pin per UART:                    o ← GPIO {0V, 3.3V, Hi-Z}        0V  3.3V Hi-Z
-                                    3.3V──100Ω──⯈⊢₁─┴─⯈⊢₂──100Ω──0V             LED1 ON  OFF  OFF
-      Hi-Z is acheived by setting pinMode(x, INPUT);                            LED2 OFF ON   OFF
-       switch beween 0V and 3.3V when data is recveived/transmitted
-       switch to Hi-Z after ~10ms of inactivity => looks like it blinks when data is flowing
+ * Intall "can-utils" and wire up another CAN node (we need the ACK signal)
+    run "sudo ip link set can0 up type can bitrate 500000" to bring up the CAN bus
+    run "candump can0 -x" and "cangen can0 -L8"
+    watch as the CAN messages fly past!
+
+ * Status and activity LEDs - 2 colors (RX/TX)
+    only use one Pin per UART:                    o ← GPIO {0V, 3.3V, Hi-Z}        0V  3.3V Hi-Z
+                                  3.3V──100Ω──⯈⊢₁─┴─⯈⊢₂──100Ω──0V             LED1 ON  OFF  OFF
+    Hi-Z is acheived by setting pinMode(x, INPUT);                            LED2 OFF ON   OFF
+     switch beween 0V and 3.3V when data is recveived/transmitted
+     switch to Hi-Z after ~10ms of inactivity => looks like it blinks when data is flowing
  */
 
 // make sure enough USB CDCs are enabled
-#if  CFG_TUD_CDC < 2
-#error "CFG_TUD_CDC must be at least 2, change in platformio.ini"
+#if  CFG_TUD_CDC < 3
+#error "CFG_TUD_CDC must be at least 3, change in platformio.ini"
 #endif
 
 // Utility macros for periodically doing stuff in a non-blocking loop.
@@ -75,43 +68,76 @@
   (uint32_t)((uint32_t)millis() - _lasttime) >= (N); _lasttime += (N))
 
 
-static uint8_t i2c_buf[800];
+static can2040 cbus;
 
-#define MyWire    Wire
 #define PIN_LED_ACT 16
 
-Adafruit_USBD_I2C i2c_usb(&MyWire);
+Adafruit_USBD_CAN can_usb(&cbus);
 Adafruit_USBD_CDC USBSer1; // Builtin USB serial active by default
 // Adafruit_USBD_CDC USBSer2;
 Adafruit_USBD_CDC USBSer3;
-SerialPIO Serial3(2,3);
+SerialPIO Serial3(8,9);
+
+
+static void
+can2040_cb(struct can2040 *cd, uint32_t notify, struct can2040_msg *msg)
+{
+  can_usb.handle_can2040_message(cd, notify, msg);
+}
+
+static void
+PIOx_IRQHandler(void)
+{
+  can2040_pio_irq_handler(&cbus);
+}
 
 void setup() {
 
   pinMode(LED_BUILTIN, OUTPUT);
 
+  // do a little panicy blink 
+  while (!TinyUSBDevice.mounted()) {
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    delay(100);
+  }
+  digitalWrite(LED_BUILTIN, LOW);
+
+
+  /*NOTE for reasons beyond me, the can-usb interface
+   * needs to be started *before* all usb CDCs.
+   */
+  // => kill Serial (Adafruit_TinyUSB starts this automatically)
+  SerialTinyUSB.end();
+
+  // Setup canbus
+  uint32_t pio_num = 0;
+  can2040_setup(&cbus, pio_num);
+  can2040_callback_config(&cbus, can2040_cb);
+
+  // Enable irqs for canbus
+  irq_set_exclusive_handler(PIO0_IRQ_0_IRQn, PIOx_IRQHandler);
+  NVIC_SetPriority(PIO0_IRQ_0_IRQn, 1);
+  NVIC_EnableIRQ(PIO0_IRQ_0_IRQn);
+
+  // init can usb with gpio_rx, gpio_tx, bitrate
+  // canbus needs to be initialized before
+  can_usb.begin(3, 4, 500000);
+
   // initialize main Serial interface
-  Serial.begin(115200);
+  SerialTinyUSB.begin(115200);
 
-  // while (!Serial) {
-  //   digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-  //   delay(100);
-  // }
-  // digitalWrite(LED_BUILTIN, LOW);
-
-  // initialize auxiliary CDC and Serial interfaces
+  // // initialize auxiliary CDC and Serial interfaces
   USBSer1.begin(115200);
   pinMode(PIN_LED_ACT, INPUT); // Hi-Z
-  Serial1.setTX(0);
-  Serial1.setRX(1);
+  Serial1.setTX(12);
+  Serial1.setRX(13);
   Serial1.begin(115200);
 
   USBSer3.begin(115200);
   //pinMode(PIN_LED_ACT, INPUT); // Hi-Z
+  // Serial3.setTX(8);
+  // Serial3.setRX(9);
   Serial3.begin(115200);
-
-  // init i2c usb with buffer and size
-  i2c_usb.begin(i2c_buf, sizeof(i2c_buf));
 
   // if already enumerated, additional class driverr begin() e.g msc, hid, midi won't take effect until re-enumeration
   if (TinyUSBDevice.mounted()) {
@@ -129,6 +155,17 @@ void setup() {
   //   delay(1000);
   // }
 
+  // it seems we need to dispense a message for the gs_usb driver to understand what's going on
+  delay(100);
+  struct gs_host_frame frame;
+
+  frame.echo_id = -1;
+  frame.flags = frame.channel = 0;
+  frame.can_dlc = 1;
+  frame.data[0] = 42;
+
+  tud_vendor_write(&frame, sizeof(frame));
+
 }
 
 static const pin_size_t NOPIN = 0xff; // Use in constructor to disable LED output
@@ -140,16 +177,16 @@ void loop() {
     if (SerialA.available()) {
       SerialB.write(SerialA.read());
       if (activity_leds_pin != NOPIN) {
-      pinMode(activity_leds_pin, OUTPUT);
-      digitalWrite(activity_leds_pin, HIGH);
-    }
+        pinMode(activity_leds_pin, OUTPUT);
+        digitalWrite(activity_leds_pin, HIGH);
+      }
     }
     if (SerialB.available()) {
       SerialA.write(SerialB.read());
       if (activity_leds_pin != NOPIN) {
-      pinMode(activity_leds_pin, OUTPUT);
-      digitalWrite(activity_leds_pin, LOW);
-    }
+        pinMode(activity_leds_pin, OUTPUT);
+        digitalWrite(activity_leds_pin, LOW);
+      }
     }
   };
 
@@ -163,14 +200,40 @@ void loop() {
   }
 
   EVERY(1 SECONDS) {
-   digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
   }
+
+  // CAN RX
+  if (tud_vendor_write_available() == CFG_TUD_VENDOR_TX_BUFSIZE) {
+    struct gs_host_frame frame;
+
+    if(queue_try_remove(&can_usb.rx_buf, &frame)) {
+      tud_vendor_write(&frame, sizeof(frame));
+      tud_vendor_write_flush();
+    }
+  }
+
+  // CAN TX
+  if (tud_vendor_available()) {
+    gs_host_frame frame;
+    uint32_t count = tud_vendor_read(&frame, sizeof(frame));
+    assert(count == sizeof(frame));
+
+    size_t hdr_size = 6;
+    struct can2040_msg tx;
+    tx.id = frame.can_id;
+    tx.dlc = (uint32_t) frame.can_dlc;
+    memcpy(tx.data, frame.data, frame.can_dlc);
+    can2040_transmit(&cbus, &tx);
+  }
+
+  tud_task(); // seemingly has no effect?
 }
 
-
+//extern "C" {
 // callback from tinyusb
 bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const* request)
 {
-  return i2c_usb.handleControlTransfer(rhport, stage, request);
+  return can_usb.handleControlTransfer(rhport, stage, request);
 }
-
+//}
