@@ -70,8 +70,12 @@ uint16_t Bento_USBD_CAN::getInterfaceDescriptor(uint8_t itfnum_deprecated, uint8
 
   // null buffer is used to get the length of descriptor only
   if (buf) {
-    itfnum = TinyUSBDevice.allocInterface(1);
+    // gs_usb needs to run over 2 separate endpoints
+    // EP1 - IN , EP2 - OUT.
+    // some computers are ok with one shared endpoint, others not
+    itfnum = TinyUSBDevice.allocInterface(2);
     ep_in = TinyUSBDevice.allocEndpoint(TUSB_DIR_IN);
+    TinyUSBDevice.allocEndpoint(TUSB_DIR_OUT); // skip endpoint
     ep_out = TinyUSBDevice.allocEndpoint(TUSB_DIR_OUT);
   }
 
