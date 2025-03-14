@@ -14,7 +14,6 @@
 #include "Adafruit_USBD_CDC.h"
 #include "Bento_USBD_CAN.h"
 #include "Adafruit_USBD_Device.h"
-#include "RP2040Support.h"
 #include "class/vendor/vendor_device.h"
 #include "Adafruit_NeoPixel.h"
 #include "gs_usb.h"
