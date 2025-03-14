@@ -68,6 +68,16 @@ extern "C" {
 #define EVERY(N) for (static uint32_t _lasttime;                   \
   (uint32_t)((uint32_t)millis() - _lasttime) >= (N); _lasttime += (N))
 
+// Utility to display what PIO state machines are already allocated.
+// Helps when figuring out what library is causing PIO crashes
+#define print_pio_use(ser)                                  \
+    for (int i = 0; i < 4; i++)                             \
+      ser.print(pio_sm_is_claimed(pio0, i), BIN);           \
+    ser.print(",");                                         \
+    for (int i = 0; i < 4; i++)                             \
+      ser.print(pio_sm_is_claimed(pio1, i), BIN);           \
+    ser.println("");
+
 
 static can2040 cbus;
 #define PIN_LED_STRIP  2
@@ -76,23 +86,23 @@ static can2040 cbus;
 Bento_USBD_CAN can_usb(&cbus);
 Adafruit_USBD_CDC USBSer1; // Builtin USB serial active by default
 // Adafruit_USBD_CDC USBSer2;
-Adafruit_USBD_CDC USBSer3;
-SerialPIO Serial3(8,9);
-Adafruit_NeoPixel strip(25, PIN_LED_STRIP, NEO_GRB + NEO_KHZ800);
+Adafruit_USBD_CDC USBSer2;
+// SerialPIO Serial3(8,9);
+Adafruit_NeoPixel* strip{nullptr}; // defer initialization until later
 
 // Input a value 0 to 255 to get a color value.
 // The colours are a transition r - g - b - back to r.
 uint32_t wheel(byte WheelPos) {
   WheelPos = 255 - WheelPos;
   if(WheelPos < 85) {
-    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+    return strip->Color(255 - WheelPos * 3, 0, WheelPos * 3);
   }
   if(WheelPos < 170) {
     WheelPos -= 85;
-    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+    return strip->Color(0, WheelPos * 3, 255 - WheelPos * 3);
   }
   WheelPos -= 170;
-  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+  return strip->Color(WheelPos * 3, 255 - WheelPos * 3, 0);
 }
 
 
@@ -100,10 +110,10 @@ uint32_t wheel(byte WheelPos) {
 void rainbow() {
   static uint pixelCycle = 0;
 
-  for(uint i=0; i < strip.numPixels(); i++) {
-    strip.setPixelColor(i, wheel((3*i + pixelCycle) & 255)); //  Update delay time  
+  for(uint i=0; i < strip->numPixels(); i++) {
+    strip->setPixelColor(i, wheel((3*i + pixelCycle) & 255)); //  Update delay time  
   }
-  strip.show();                             //  Update strip to match
+  strip->show();                             //  Update strip to match
   pixelCycle++;                             //  Advance current cycle
   if(pixelCycle >= 256)
     pixelCycle = 0;                         //  Loop the cycle back to the begining
@@ -132,8 +142,6 @@ void setup() {
   }
   digitalWrite(LED_BUILTIN, LOW);
 
-  strip.setBrightness(40);
-
   /*NOTE for reasons beyond me, the can-usb interface
    * needs to be started *before* all usb CDCs.
    */
@@ -149,6 +157,9 @@ void setup() {
   irq_set_exclusive_handler(PIO0_IRQ_0, PIOx_IRQHandler);
   irq_set_priority(PIO0_IRQ_0, 1);
   irq_set_enabled(PIO0_IRQ_0, true);
+  pio_claim_sm_mask(pio0, 0b1111);
+  // can2040 does not claim it's PIO block
+  // this means other libraries will try to override it
 
   // init can usb with gpio_rx, gpio_tx, bitrate
   // canbus needs to be initialized before
@@ -157,6 +168,9 @@ void setup() {
   // initialize main Serial interface
   SerialTinyUSB.begin(115200);
 
+  strip = new Adafruit_NeoPixel(25, PIN_LED_STRIP, NEO_GRB + NEO_KHZ800);
+  strip->setBrightness(40);
+
   // // initialize auxiliary CDC and Serial interfaces
   USBSer1.begin(115200);
   pinMode(PIN_LED_ACT, INPUT); // Hi-Z
@@ -164,11 +178,11 @@ void setup() {
   Serial1.setRX(13);
   Serial1.begin(115200);
 
-  USBSer3.begin(115200);
+  USBSer2.begin(115200);
   //pinMode(PIN_LED_ACT, INPUT); // Hi-Z
   // Serial3.setTX(8);
   // Serial3.setRX(9);
-  Serial3.begin(115200);
+  Serial2.begin(115200);
 
   // if already enumerated, additional class driverr begin() e.g msc, hid, midi won't take effect until re-enumeration
   if (TinyUSBDevice.mounted()) {
@@ -223,7 +237,7 @@ void loop() {
 
 
   serial_passthrough(USBSer1, Serial1, PIN_LED_ACT);
-  serial_passthrough(USBSer3, Serial3, PIN_LED_ACT);
+  serial_passthrough(USBSer2, Serial2, PIN_LED_ACT);
 
   // extends led on duration long enough for all data rates to be visible to humans
   EVERY(10 MILLISECONDS) {
@@ -232,6 +246,7 @@ void loop() {
 
   EVERY(1 SECONDS) {
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+    // print_pio_use(SerialTinyUSB);
   }
 
   // CAN RX
@@ -260,13 +275,13 @@ void loop() {
 
   tud_task(); // seemingly has no effect?
 
-}
-
-void loop1() {
   EVERY(10 MILLISECONDS) {
     rainbow();
   }
 }
+
+// void loop1() {
+// }
 
 //extern "C" {
 // callback from tinyusb
